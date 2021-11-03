@@ -1,0 +1,637 @@
+library(openxlsx)
+library(tidyverse)
+library(scales)
+library(arules)
+library(gridExtra)
+library(grid)
+library(arulesViz)
+library(devtools)
+library(caTools)
+library(corrr)
+library(e1071)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(plotly)
+library(zoo)
+
+
+##cleaning data*/
+  train <- read.csv("C:/Users/aishu/Desktop/Fundaments of Data Analytics/project/original_data/train.csv/train.csv")
+  names(train)[12]<-"Purchase_Total"
+  str(train)
+  complete.cases(train)
+  summary(train)
+  train[is.na(train)]<-0  
+  duplicated(train)
+  write.csv(train,"train.csv")
+  
+  test <- read.csv("C:/Users/aishu/Desktop/Fundaments of Data Analytics/project/original_data/test.csv/test.csv")
+  str(test)
+  complete.cases(test)
+  summary(test)
+  test[is.na(test)]<-0
+  duplicated(test)
+  write.csv(test,"test.csv")
+  
+  ##specifying a column type to be a factor rather than numeric*/
+    train$User_ID <- as.factor(train$User_ID)
+  train$Product_ID <- as.factor(train$Product_ID)
+  train$Marital_Status <- as.factor(ifelse(train$Marital_Status == 1, 'Married', 'Single')) ##changing the numbered category to married or single category
+  train$Age <- as.factor(train$Age)
+  train$Gender <- as.factor(ifelse(train$Gender== 'M', 'Male', 'Female'))##changing the numbered category to Male or Female category
+  train$Occupation <- as.factor(train$Occupation)
+  train$City_Category <- as.factor(train$City_Category)
+  train$Stay_In_Current_City_Years <- as.factor(train$Stay_In_Current_City_Years)
+  
+  test$User_ID <- as.factor(test$User_ID)
+  test$Product_ID <- as.factor(test$Product_ID)
+  test$Marital_Status <- as.factor(ifelse(test$Marital_Status == 1, 'Married', 'Single'))
+  test$Age <- as.factor(test$Age)
+  test$Gender <- as.factor(ifelse(test$Gender=='M', 'Male', 'Female'))
+  test$Occupation <- as.factor(test$Occupation)
+  test$City_Category <- as.factor(test$City_Category)
+  test$Stay_In_Current_City_Years <- as.factor(test$Stay_In_Current_City_Years)
+  
+  ##creating a subtable out of the table train after cleaning  for further calculation and analysis*/
+    Train2 <- distinct(train, User_ID, Age, Gender, Marital_Status, Occupation, City_Category, Stay_In_Current_City_Years)
+  write.csv(Train2,'Train2.csv') ##write it to csv file named train2.csv*/
+    
+    ##creating a subtable out of the table test after cleaning  for further calculation and analysis
+  Test2 <- distinct(test, User_ID, Age, Gender, Marital_Status, Occupation, City_Category, Stay_In_Current_City_Years)
+  write.csv(Test2,'Test2.csv')##write it to csv file named test2.csv*/
+    
+  
+  ##1. To start our analysis, lets find out who is more likely to spend more on black friday- male or female?*/
+    ##first find gender count*/
+    gender = train %>% select(User_ID, Gender) %>% group_by(User_ID) %>% arrange(User_ID) %>% distinct
+  
+  ##by summarizing this */
+    summary(gender$Gender)
+  
+  ##total purchase count*/
+    total_purchasecount = train %>% select(User_ID, Gender, Purchase_Total) %>% group_by(User_ID) %>% arrange(User_ID) %>% summarize(purchase_total = sum(Purchase_Total))
+  
+  
+  ##MERGE TWO Tables*/
+    gender_total_purchase <- merge(x=gender, y=total_purchasecount, by="User_ID", all.x=TRUE)
+  
+  show(gender_total_purchase)
+  ##finding average*/
+    average_gender_spending = gender_total_purchase %>% group_by(Gender) %>% summarize(Gender_purchase = sum(as.numeric(purchase_total)), Count = n(), Average = Gender_purchase/Count)
+  
+  show(average_gender_spending)
+  
+  ##plotting graph*/
+    gender_spending  = ggplot(data = average_gender_spending) +
+    geom_bar(mapping = aes(x = Gender, y = Gender_purchase , fill = Gender), stat = 'identity') +
+    labs(title = 'Spending by Gender') + scale_fill_brewer(palette = "Spectral")
+  
+  print(gender_spending)
+  
+  
+  ##plotting graph*/
+    gender_spending_average  = ggplot(data = average_gender_spending) +
+    geom_bar(mapping = aes(x = Gender, y = Average , fill = Gender), stat = 'identity') +
+    labs(title = 'Average Spending by Gender') + scale_fill_brewer(palette = "Set3")
+  
+  print(gender_spending_average)
+  
+  
+  ##2. Find out who is more likely to spend more on black friday- married or single?*/
+    ##first find marital status of every user*/
+    maritalStatus = train %>%
+    select(User_ID, Marital_Status) %>%
+    group_by(User_ID) %>% arrange(User_ID) %>%
+    distinct()
+  
+  ##by summarizing this */
+    summary(maritalStatus$Marital_Status)
+    
+    
+  marital_status_graph = ggplot(data = maritalStatus) +
+      geom_bar(mapping = aes(x = Marital_Status, y = ..count.., fill = Marital_Status)) +
+      labs(title = 'Marital Status') +
+      scale_fill_brewer(palette = 'Set3')
+    print(marital_status_graph)
+  
+  ##total purchase count*/
+    total_purchasecount_M = train %>% select(User_ID, Marital_Status, Purchase_Total) %>% group_by(User_ID) %>% arrange(User_ID) %>% summarize(purchase_total1 = sum(Purchase_Total))
+  
+  
+  ##MERGE TWO Tables*/
+    marital_status_total_purchase <- merge(x=maritalStatus, y=total_purchasecount_M, by="User_ID", all.x=TRUE)
+  
+  ##taking average*/
+    average_spent_Marital = marital_status_total_purchase %>% group_by(Marital_Status) %>% summarize(MaritalStatus_purchase = sum(as.numeric(purchase_total1)), Count_M = n(), Average_M = MaritalStatus_purchase/Count_M)
+  
+  ##plotting graph*/
+    
+   
+    Marital_spending  = ggplot(data = average_spent_Marital) +
+    geom_bar(mapping = aes(x = Marital_Status, y = Count_M , fill = Marital_Status), stat = 'identity') +
+    labs(title = 'Spending by Marital_Status') + scale_fill_brewer(palette = 'Set2')
+    
+    
+  
+  print(Marital_spending)
+  
+  
+  ##plotting graph*/
+    Marital_spending_average  = ggplot(data = average_spent_Marital) +
+    geom_bar(mapping = aes(x = Marital_Status, y = Average_M , fill = Marital_Status), stat = 'identity') +
+    labs(title = 'Average Spending by Gender') + scale_fill_brewer(palette = "Set1")
+  
+  print(Marital_spending_average)
+  
+  ##3. find out who is more likely to spend more on black friday- based on the years they stay in the city */
+    user_stay = train %>%
+    select(User_ID, City_Category, Stay_In_Current_City_Years) %>%
+    group_by(User_ID) %>%
+    arrange(User_ID) %>%
+    distinct()
+  ##by summarizing this */
+    summary(user_stay$City_Category) ##number of customers in each city*/
+    summary(user_stay$Stay_In_Current_City_Years) ##number of customers stayed in each city for different number of years*/  
+    
+    
+    ##total purchase count*/
+    total_purchasecount_S = train %>% select(User_ID, City_Category, Stay_In_Current_City_Years, Purchase_Total) %>% group_by(User_ID) %>% arrange(User_ID) %>% summarize(purchase_total2 = sum(Purchase_Total))
+  show(total_purchasecount_S)
+  
+  
+  ##MERGE TWO Tables*/
+    stay_in_city_total_purchase <- merge(x=user_stay, y=total_purchasecount_S, by="User_ID", all.x=TRUE)
+  show(stay_in_city_total_purchase)
+  
+  ##taking average*/
+    stay_in_city_spent = stay_in_city_total_purchase  %>% group_by(City_Category, Stay_In_Current_City_Years) %>% summarize(City_Stay_purchase = sum(as.numeric(purchase_total2)), Count_S = n(), Average_S = City_Stay_purchase/Count_S)
+  show(stay_in_city_spent)
+  
+  ##plotting graph*/
+    City_Stay_spending  = ggplot(data = stay_in_city_spent) +
+    geom_bar(mapping = aes(x = City_Category, y = City_Stay_purchase  , fill = Stay_In_Current_City_Years), stat = 'identity') +
+    labs(title = 'Spending by residents in each city') + scale_fill_brewer(palette = "Set2")
+  
+  print(City_Stay_spending)
+  
+  
+  ##plotting graph*/
+    City_Stay_spending_average  = ggplot(data = stay_in_city_spent) +geom_bar(mapping = aes(x = City_Category, y = Average_S  , fill = Stay_In_Current_City_Years), stat = 'identity') +labs(title = 'Average Spending by residents in each city') + scale_fill_brewer(palette = "Set1")
+  
+  print(City_Stay_spending_average)
+  
+  ##sorting the stay_in_city_spent to find highest spent customers living status in each city*/
+
+newdata <- stay_in_city_spent[order(-stay_in_city_spent$City_Stay_purchase),]
+show(newdata)
+
+newdata1 <- stay_in_city_spent[order(-stay_in_city_spent$Average_S),]
+show(newdata1)
+
+
+##4. find out who is more likely to spend more on black friday- based on age*/
+user_age = train %>%
+                    select(User_ID, Age) %>%
+                    group_by(User_ID) %>%
+		    arrange(User_ID) %>%
+                    distinct()
+##by summarizing this */
+summary(user_age$Age)
+
+##total purchase count*/
+total_purchasecount_a = train %>% select(User_ID, Age , Purchase_Total) %>% group_by(User_ID) %>% arrange(User_ID) %>% summarize(purchase_total3 = sum(Purchase_Total))
+show(total_purchasecount_a)
+
+
+##MERGE TWO Tables*/
+age_total_purchase <- merge(x=user_age, y=total_purchasecount_a, by="User_ID", all.x=TRUE)
+show(age_total_purchase)
+
+user_age_summary = age_total_purchase %>% select(Age, purchase_total3) %>% group_by(Age) %>% summarize(purchase_total4 = sum(purchase_total3))
+show(user_age_summary)
+
+##taking average*/
+
+age_spent= age_total_purchase  %>% group_by(Age) %>% summarize(Age_purchase3 = sum(as.numeric(purchase_total3)), Count_a = n(), Average_a = Age_purchase3/Count_a)
+show(age_spent)
+
+##plotting graph*/
+Age_spending  = ggplot(data = age_spent) +
+    geom_bar(mapping = aes(x = Age, y = Age_purchase3  , fill = Age), stat = 'identity') +
+    labs(title = 'Spending by Age') + scale_fill_brewer(palette = "PuBuGn")
+
+print(Age_spending)
+
+##plotting graph*/
+Age_spending_average  = ggplot(data = age_spent) +geom_bar(mapping = aes(x = Age, y = Average_a  , fill = Age), stat = 'identity') +
+   labs(title = 'Spending by Age') + scale_fill_brewer(palette = "PuBuGn")
+
+print(Age_spending_average)
+
+
+##5. Finding the customer who made the highest purchase
+customer_purchase = train %>% group_by(User_ID) %>% summarize(count_purchase = n(),purchase_total5 = sum(Purchase_Total), Average_buyer = purchase_total5/count_purchase)
+
+##sort to get the list of customers in order of amount they spent on purchase(desc)*/
+customer_purchase = customer_purchase[order(-customer_purchase$purchase_total5),]
+
+##top buyer is the user with user_id = 1004277 
+top_buyer = head(customer_purchase, 1)
+
+top_buyer
+
+summary(customer_purchase)
+
+## Count of purchase customer made based on gender
+top_buyer_gender =  merge(x=gender, y= customer_purchase, by="User_ID", all.x = TRUE)
+
+gendervsbuyer =  ggplot(data = top_buyer_gender) +
+  geom_bar(mapping = aes(x = Gender, y = Average_buyer  , fill = Gender), stat = 'identity') +
+  labs(title = 'Shooping count vs Gender') + scale_fill_brewer(palette = "PuBuGn")
+
+print(gendervsbuyer)
+
+
+
+
+##graph showing top 10 customers i.e highest purchased customers */
+customer_purchase1 = customer_purchase[order(-customer_purchase$purchase_total5),]
+data1 =  head(customer_purchase1, 10)
+show(data1)
+ggplot(data1, aes(x=User_ID, y=purchase_total5, group=1)) + geom_line() + labs(title = "Top 10 buyers")
+
+
+ ##density chart is plot to show the distribution of purchase amounts to see where the highest number of similar purchase amount lie in accordance with the whole customer base*/
+ggplot(customer_purchase , aes(purchase_total5)) +
+  geom_density(adjust = 1) +
+  geom_vline(aes(xintercept=median(purchase_total5)),
+             color="blue", linetype="dashed", size=1) +
+  geom_vline(aes(xintercept=mean(purchase_total5)),
+             color="red", linetype="dashed", size=1) +
+  geom_text(aes(x=mean(purchase_total5), label=round(mean(purchase_total5)), y=1.2e-06), color = 'red', angle=360,
+            size=4, vjust=3, hjust=-.1) +
+  geom_text(aes(x=median(purchase_total5), label=round(median(purchase_total5)), y=1.2e-06), color = 'blue', angle=360,
+            size=4, vjust=0, hjust=-.1) +
+  scale_x_continuous(name="purchase_total5", limits=c(0, 7500000), breaks = seq(0,7500000, by = 1000000), expand = c(0,0)) +
+  scale_y_continuous(name="Density", limits=c(0, .00000125), labels = scientific, expand = c(0,0))
+
+##6. Which product is more likely to be sold in the sale like black friday*/
+
+top_product = train%>%count(Product_ID, sort = TRUE)
+
+##top five sold product*/
+head(top_product)
+
+##out of all product we found that product with product_id = P00265242 was most likely sold, lets see all the purchases of that product*/
+ most_sold = train[train$Product_ID == 'P00265242', ]
+ head(most_sold, 20)
+ ## Age of customer who bought top product =P00265242 vs number of products purchased by them 
+ top_seller = most_sold %>% select(User_ID,Product_ID,Gender, Purchase_Total) %>% group_by(Gender) %>% summarise(
+   count = n(), purchase_total6 = sum(Purchase_Total), Average = purchase_total6/count) 
+ 
+ 
+ gendervsseller =  ggplot(data = top_seller) +
+   geom_bar(mapping = aes(x = Gender, y = count  , fill = Gender), stat = 'identity') +
+   labs(title = 'Count of customer by Age') + scale_fill_brewer(palette = "PuBuGn")
+ print(gendervsseller)
+
+##Randomly testing if all customer paid same price for this product*/ 
+ IDCountOfUser <- as.data.frame(table(train$User_ID))
+ names(IDCountOfUser)<- c("User_ID","User_Purchase_Count")
+ head(IDCountOfUser)
+ write.csv(IDCountOfUser,"IdcountofUser.csv");
+ 
+ ##merging IDCountofUser with train*/
+ train1 <- merge(x = train, y = IDCountOfUser, by = "User_ID", all.x = TRUE)
+ 
+ # writing code such that if a new user comes for the first time his count is set to one in test dataset
+ test1 <- merge(x = test, y = IDCountOfUser, by = "User_ID", all.x = TRUE)
+most_sold = train1[train1$Product_ID == 'P00265242', ]
+head(most_sold)
+
+ch = most_sold[most_sold$User_Purchase_Count =='77',]
+show(ch)
+
+ch = most_sold[most_sold$User_Purchase_Count =='29',]
+show(ch) 
+## interesting finding is that even though people are purchasing the same product, they are paying different prices. 
+##This could be due to various Black Friday promotions, discounts, or coupon codes.
+##Otherwise, investigation would need to be done regarding the reason for different purchase prices of the same product between customers.
+
+
+##We see a similar distribution between genders to our overall dataset gender split - lets confirm.
+genderDist_bs_prop = ggplot(data = most_sold) + 
+  geom_bar(fill = 'lightblue', mapping = aes(x = Gender, y = ..prop.., group = 1, fill = Gender)) +
+  labs(title = 'Gender of Customers (Best Seller - Proportion)') +
+  theme(plot.title = element_text(size=9.5))
+
+genderDist_prop = ggplot(data = gender) + 
+  geom_bar(fill = "lightblue4", mapping = aes(x = Gender, y = ..prop.., group = 1)) +
+  labs(title = 'Gender of Customers (Total Proportion)') +
+  theme(plot.title = element_text(size=9.5)) 
+
+grid.arrange(genderDist_prop, genderDist_bs_prop, ncol=2)
+
+##7. Which type of product are common among men and product common among women and save the details in data frame*/
+##selecting products of female*/
+temp1 = train[train$Gender =='Female',] 
+female_products = temp1 %>% select(Product_ID) %>% count(Product_ID, sort = TRUE)
+show(female_products)
+
+
+##selecting products of male*/
+temp2 = train[train$Gender =='Male',] 
+male_products =  temp2 %>% select(Product_ID) %>% count(Product_ID, sort = TRUE)
+show(male_products)
+
+
+
+##deleting the product with count =1 as they are only purchased by 1 customer*/
+## below are common products which 2 or more male purchased
+male_products_common = male_products[male_products$n > 1,]
+
+## below are common products which 2 or more female purchased
+female_products_common = female_products[female_products$n > 1,]
+## below are common products which only one customer bought
+male_products_uncommon = male_products[male_products$n == 1,]
+female_products_uncommon = female_products[female_products$n == 1,]
+##counting total products that male and female bought
+count_male = nrow(male_products)
+count_female = nrow(female_products)
+##counting common products that male and female bought
+count_male_common = nrow(male_products_common)
+count_female_common = nrow(female_products_common)
+##counting uncommon products that male and female bought
+count_male_uncommon = nrow(male_products_uncommon)
+count_female_uncommon = nrow(female_products_uncommon)
+#cross-verifying the count 
+count_male
+count_male_common
+count_male_uncommon
+count_female
+count_female_common
+count_female_uncommon
+
+head(female_products_common)
+head(male_products_common)
+##8. Finding common product that male and female both purchase
+## from the above head display we see that most common product and most purchased product both male and female purchased is product with product_id P00265242
+
+##for(i in 1:10){
+  ##for(j in 1:10){
+##  if(i == j){
+  ##  common_id[i] = male_products$Product_ID[i]
+  ##}
+  ##}
+##}
+##count_id = nrow(common_id)
+
+
+##9. City and marital status - users marital_status in each city
+
+
+city_marriage = train %>%
+  select(User_ID, City_Category, Marital_Status) %>%
+  group_by(User_ID) %>%
+  arrange(User_ID) %>%
+  distinct()
+city_marriage_grouping = city_marriage %>% group_by(City_Category, Marital_Status) %>% count()
+
+
+city_marriage_plot = ggplot(data=city_marriage_grouping) + 
+  geom_bar(mapping = aes(x=Marital_Status, y = n , fill = City_Category), stat = 'identity')+ 
+  labs(title =  'City + Marital_Status') + scale_fill_brewer(palette = 'PuBuGn')
+
+print(city_marriage_plot)
+
+
+
+#MODEL 1#
+
+## association rule - Apriori to check what products are purchased together so that it will help in the store's product placement 
+customers_products = train %>%
+  select(User_ID, Product_ID) %>%   
+  group_by(User_ID) %>%                   
+  arrange(User_ID) %>%         
+  mutate(id = row_number()) %>% # Defining a key column for each "Product_ID" and its corresponding "User_ID" (Must do this for spread() to work properly)    
+  spread(User_ID, Product_ID) %>%   # Converting our dataset from tall to wide format, and grouping "Product_IDs" to their corresponding "User_ID"
+  t()    # Transposing the dataset from columns of "User_ID" to rows of "User_ID"
+
+customers_products = customers_products[-1,] # Now we can remove the Id row we created earlier for spread() to work correctly.
+
+## Apriori algorithm to work correctly, we need to convert the customers_products table into a sparse matrix
+write.csv(customers_products, 'customers_products.csv')
+
+cust_prod = read.transactions('customers_products.csv', sep = ',', rm.duplicates = TRUE) #remove duplicates
+
+summary(cust_prod)
+
+#from summary we got most frequent items:
+#P00265242 P00025442 P00110742 P00112142 P00057642   (Other) 
+#1880      1615      1612      1562      1470    548846 
+
+#cross checking with the top products sold
+
+head(top_product)
+
+#give us the same result. #Sparse matrix is accurate
+
+#Given itemset L, support of L is the percent of transactions that contain L
+#Support: Our support value will be the minimum number of transactions necessary divided by the total number of transactions.
+#As described by summary(cust_prod), we have a total number of unique customer transactions of 5892.
+#Assuming that we want to choose a product which was purchased by at least 50 different customers in our dataset
+#With these two values established, we can compute the support value with simple division. (50/5892) = .008486083
+
+#Confidence measures the certainty of a rule
+#The confidence value determines how often a rule is to be found true
+#The default confidence value in the apriori() function is 0.80 or 80%, so we can begin with that number and then adjust the parameters to applicable results.
+
+rules1 = apriori(data = cust_prod,
+                parameter = list(support = 0.008, confidence = 0.80, maxtime = 0)) #maxtime given 0 so that there is no limit on time and algorithm run without any constrains
+
+#this algorithm created 12 rules according to the parameter given
+
+inspect(sort(rules1, by = 'lift'))
+plot(rules1, method = 'graph')
+
+#by changing parameters lets see if we can get better results 
+#Now lets decrease the cofidence to 0.75 and see the results
+rules2 = apriori(data = cust_prod,
+                 parameter = list(support = 0.008, confidence = 0.75, maxtime = 0))
+
+inspect(sort(rules2, by = 'lift'))
+plot(rules2, method = 'graph', max = 25)
+plot(rules2, method = 'grouped', max = 25)
+#Now lets decrease the cofidence to 0.70 and see the results
+rules3 = apriori(data = cust_prod,
+                 parameter = list(support = 0.008, confidence = 0.70, maxtime = 0))
+inspect(sort(rules3, by = 'lift'))
+plot(rules3, method = 'grouped', max = 25)
+#Now lets decrease the cofidence to 0.75 and support to  and see the results
+rules4 = apriori(data = cust_prod,
+                 parameter = list(support = 0.0075, confidence = 0.70, maxtime = 0))
+
+inspect(sort(rules4, by = 'lift'))
+plot(rules4, method = 'graph', max = 25)
+
+#from running above rules, rules2 is best as the highest lift havent changed from then and the 
+#product P00106742 was purchased along with product P00070942,P00100642 with 75.4 % confidence and 0.008 percent 
+#support and highest lift 9.046154 
+
+##model 2: Regression
+#predicting the value of purchase amount of each user based on the demographics like x= age, gender, occupation, city_category, marital_status and stay years in current city
+# and y= purchase total. 
+
+##. Loading the files
+train_regmodel <- read.csv("C:/Users/aishu/Desktop/Fundaments of Data Analytics/project/original_data/train.csv/train.csv")
+test_regmodel <- read.csv("C:/Users/aishu/Desktop/Fundaments of Data Analytics/project/original_data/test.csv/test.csv")
+
+names(train_regmodel)[12]<-"Purchase_Total"
+str(train_regmodel)
+complete.cases(train_regmodel)
+summary(train_regmodel)
+
+## Data Cleaning
+##Replacing the NULL values with 0
+train_regmodel[is.na(train_regmodel)]<-0
+duplicated(train_regmodel)
+
+##. Preparing the data, changing. Specifying a column type to be factor
+##(categorical), rather than numeric.
+train_regmodel$User_ID <- as.factor(train_regmodel$User_ID)
+train_regmodel$Product_ID <- as.factor(train_regmodel$Product_ID)
+train_regmodel$Gender <- as.factor(train_regmodel$Gender)
+train_regmodel$Product_Category_1 <- as.factor(train_regmodel$Product_Category_1)
+train_regmodel$Product_Category_2 <- as.factor(train_regmodel$Product_Category_2)
+train_regmodel$Product_Category_3 <- as.factor(train_regmodel$Product_Category_3)
+train_regmodel$Marital_Status <- as.factor(train_regmodel$Marital_Status)
+train_regmodel$City_Category <- as.factor(train_regmodel$City_Category)
+train_regmodel$Age <- as.factor(train_regmodel$Age)
+train_regmodel$Age <- as.numeric(train_regmodel$Age)
+train_regmodel$Occupation <- as.factor(train_regmodel$Occupation)
+train_regmodel$Stay_In_Current_City_Years <- as.factor(train_regmodel$Stay_In_Current_City_Years)
+
+test_regmodel$User_ID <- as.factor(test_regmodel$User_ID)
+test_regmodel$Product_ID <- as.factor(test_regmodel$Product_ID)
+test_regmodel$Gender <- as.factor(test_regmodel$Gender)
+test_regmodel$Product_Category_1 <- as.factor(test_regmodel$Product_Category_1)
+test_regmodel$Product_Category_2 <- as.factor(test_regmodel$Product_Category_2)
+test_regmodel$Product_Category_3 <- as.factor(test_regmodel$Product_Category_3)
+test_regmodel$Marital_Status <- as.factor(test_regmodel$Marital_Status)
+test_regmodel$City_Category <- as.factor(test_regmodel$City_Category)
+test_regmodel$Age <- as.factor(test_regmodel$Age)
+test_regmodel$Age <- as.numeric(test_regmodel$Age)
+test_regmodel$Occupation <- as.factor(test_regmodel$Occupation)
+test_regmodel$Stay_In_Current_City_Years <- as.factor(test_regmodel$Stay_In_Current_City_Years)
+
+
+##. Changing the data from factor to integer so as to do regression otherwise the
+##categorical will be separated as separate variables
+train_regmodel$User_ID <- as.integer(train_regmodel$User_ID)
+train_regmodel$Product_ID <- as.integer(train_regmodel$Product_ID)
+train_regmodel$Gender <- as.integer(train_regmodel$Gender)
+train_regmodel$Marital_Status <- as.integer(train_regmodel$Marital_Status)
+train_regmodel$City_Category <- as.integer(train_regmodel$City_Category)
+train_regmodel$Age <- as.integer(train_regmodel$Age)
+train_regmodel$Occupation <- as.integer(train_regmodel$Occupation)
+train_regmodel$Stay_In_Current_City_Years <- as.integer(train_regmodel$Stay_In_Current_City_Years)
+train_regmodel$Product_Category_1 <- as.integer(train_regmodel$Product_Category_1)
+train_regmodel$Product_Category_2 <- as.integer(train_regmodel$Product_Category_2)
+train_regmodel$Product_Category_3 <- as.integer(train_regmodel$Product_Category_3)
+
+##test_regmodeling data
+test_regmodel$User_ID <- as.integer(test_regmodel$User_ID)
+test_regmodel$Product_ID <- as.integer(test_regmodel$Product_ID)
+test_regmodel$Gender <- as.integer(test_regmodel$Gender)
+test_regmodel$Marital_Status <- as.integer(test_regmodel$Marital_Status)
+test_regmodel$City_Category <- as.integer(test_regmodel$City_Category)
+test_regmodel$Age <- as.integer(test_regmodel$Age)
+test_regmodel$Occupation <- as.integer(test_regmodel$Occupation)
+test_regmodel$Stay_In_Current_City_Years <- as.integer(test_regmodel$Stay_In_Current_City_Years)
+test_regmodel$Product_Category_1 <- as.integer(test_regmodel$Product_Category_1)
+test_regmodel$Product_Category_2 <- as.integer(test_regmodel$Product_Category_2)
+test_regmodel$Product_Category_3 <- as.integer(test_regmodel$Product_Category_3)
+
+##. correlation
+##Doing correlation before dropping columns so as to know the strength of
+## relationship between different variable in our data and to explain why we
+##dropped some variables to do our regression
+##"---------------------------CORRELATION TABLE----------------------"
+correlation_table <- as.data.frame(cor(train_regmodel))
+correlation_table$variable1 = rownames(correlation_table)
+correlation_table %>% gather(key = variable2, value = r, 1:12) %>% ggplot(aes(x = variable1, y = variable2, fill = r)) + geom_tile() + geom_text(aes(label = round(r, 2)), size = 3)+ scale_fill_gradient2(low = '#00a6c8', high='#eb3300', mid = 'white') + coord_equal()  + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+##5. Dropping Product_ID, User_ID,Product_Category_1,Product_Category_2,Product_Category_3
+##Product_Category_2 and Product_Category_2 have many NULL values which shows that the columns do not contain much information
+##Dropped Product_Category_3 as there is very low correlation of Product_Category_1 to Purchase_Total
+##All 4 variables have very low correlation with other variables and mainly to
+##Purchase_Total
+train_regmodel$Product_ID <- NULL
+train_regmodel$User_ID <- NULL
+train_regmodel$Product_Category_1 <- NULL
+train_regmodel$Product_Category_2 <- NULL
+train_regmodel$Product_Category_3 <- NULL
+
+test_regmodel$Product_ID <- NULL
+test_regmodel$User_ID <- NULL
+test_regmodel$Product_Category_1 <- NULL
+test_regmodel$Product_Category_2 <- NULL
+test_regmodel$Product_Category_3 <- NULL
+
+##Correlation with values used in regression
+correlation_table2 <- as.data.frame(cor(train_regmodel))
+correlation_table2$variable1 = rownames(correlation_table2)
+correlation_table2 %>% gather(key = variable2, value = r, 1:7) %>% ggplot(aes(x = variable1, y = variable2, fill = r)) + geom_tile() + geom_text(aes(label = round(r, 2)), size = 3)+ scale_fill_gradient2(low = '#00a6c8', high='#eb3300', mid = 'white') + coord_equal()  + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+##. Regression Model
+print("---------------------------REGrRESSION MODEL-----------------------")
+linear <- lm(Purchase_Total ~., train_regmodel)
+summary(linear)
+##Our linear formula, y=mx + c, for purchase is:
+## Purchase=690.394Gender + 34.411Age + 8.452Occupation + 401.826City_Category +
+##11.635Stay_In_Current_City_Years + -54.284Marital_Status
+
+##. Prediction
+predict <- predict(linear, train_regmodel)  
+results <- cbind(predict, train_regmodel$Purchase)
+##Predicted VS Real values
+colnames(results) <- c('Predicted','Real')
+head(results)
+train_final = train_regmodel %>% add_column(results$Predicted)
+write.csv(train_final,'train_final.csv')
+
+##.Prediction with test_regmodel data
+##Prediction
+predict2 <- predict(linear, test_regmodel)  
+results2 <- cbind(predict2)
+##Predicted VS Real values
+colnames(results2) <- c('Predicted_Purchase')
+head(results2)
+test_final <- test_regmodel %>% add_column(results2)
+write.csv(test_final,'test_final_result.csv')
+
+##. ANOVA 
+print("---------------------------ANOVA-----------------------")
+anova(linear)
+
+##. RMSE
+##sqrt(mean((results$real - results$pred)^2))
+results<-as.data.frame(results)
+linear_rmse <- RMSE(results$Real,results$Predicted)
+linear_rmse
+
+##. Error calculation
+error=mean((abs(predict-train_regmodel$Purchase_Total)/train_regmodel$Purchase_Total)*100)
+head(error)
+
+##. R squared
+rsq<-summary(linear)$r.squared
+rsq
+
+##SVM
+
+#svm_Linear <- svm(Purchase_Total ~ ., data = train_regmodel, method = "svmLinear",tuneGrid = parametersC,trControl = ctrl_cv2)
+#summary(svm_Linear)
